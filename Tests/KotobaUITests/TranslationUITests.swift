@@ -5,30 +5,23 @@ final class TranslationUITests: XCTestCase {
         continueAfterFailure = false
     }
 
-    private func launchApp() -> XCUIApplication {
+    private func launchApp(prefill: String? = nil) -> XCUIApplication {
         let app = XCUIApplication()
-        app.launchArguments = ["-ui-testing"]
+        var arguments = ["-ui-testing"]
+        if let prefill {
+            arguments += ["-ui-testing-prefill", prefill]
+        }
+        app.launchArguments = arguments
         app.launch()
         return app
     }
 
-    private func inputField(in app: XCUIApplication) -> XCUIElement {
-        app.descendants(matching: .any)["translate.input"]
-    }
-
-    private func tapTranslate(in app: XCUIApplication) {
-        let keyboardButton = app.buttons["translate.run.keyboard"]
-        if keyboardButton.waitForExistence(timeout: 2), keyboardButton.isHittable {
-            keyboardButton.tap()
-            return
-        }
-
-        let button = app.buttons["translate.run"]
-        XCTAssertTrue(button.waitForExistence(timeout: 5))
-        if !button.isHittable {
-            app.swipeUp()
-        }
-        button.tap()
+    private func waitUntilEnabled(_ element: XCUIElement, timeout: TimeInterval = 5) {
+        let expectation = XCTNSPredicateExpectation(
+            predicate: NSPredicate(format: "isEnabled == true"),
+            object: element
+        )
+        XCTAssertEqual(XCTWaiter().wait(for: [expectation], timeout: timeout), .completed)
     }
 
     private func waitForOutput(_ app: XCUIApplication, containing needle: String) {
@@ -43,30 +36,32 @@ final class TranslationUITests: XCTestCase {
     }
 
     func testTranslatesJapaneseToEnglishWithMockEngine() {
-        let app = launchApp()
+        let app = launchApp(prefill: "会議は来週の月曜日に変更されました。")
 
-        let input = inputField(in: app)
+        let input = app.descendants(matching: .any)["translate.input"]
         XCTAssertTrue(input.waitForExistence(timeout: 10))
-        input.tap()
-        input.typeText("会議は来週の月曜日に変更されました。")
 
-        tapTranslate(in: app)
+        let run = app.buttons["translate.run"]
+        XCTAssertTrue(run.waitForExistence(timeout: 5))
+        waitUntilEnabled(run)
+        run.tap()
+
         waitForOutput(app, containing: "EN:")
     }
 
     func testSwitchesTargetLanguageToJapanese() {
-        let app = launchApp()
+        let app = launchApp(prefill: "The meeting moved to next Monday.")
 
         let targetMenu = app.buttons["translate.targetMenu"]
         XCTAssertTrue(targetMenu.waitForExistence(timeout: 10))
         targetMenu.tap()
         app.buttons["日本語"].tap()
 
-        let input = inputField(in: app)
-        input.tap()
-        input.typeText("The meeting moved to next Monday.")
+        let run = app.buttons["translate.run"]
+        XCTAssertTrue(run.waitForExistence(timeout: 5))
+        waitUntilEnabled(run)
+        run.tap()
 
-        tapTranslate(in: app)
         waitForOutput(app, containing: "JA:")
     }
 

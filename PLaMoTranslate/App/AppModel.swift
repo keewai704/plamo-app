@@ -31,6 +31,13 @@ final class AppModel {
         self.store = store
         self.isUITesting = ProcessInfo.processInfo.arguments.contains("-ui-testing")
         self.installedVariantIDs = Set(store.installedVariants().map(\.id))
+
+        let arguments = ProcessInfo.processInfo.arguments
+        if let index = arguments.firstIndex(of: "-ui-testing-prefill"),
+           arguments.indices.contains(index + 1) {
+            self.translation.input = arguments[index + 1]
+            self.translation.updateSuggestedTarget()
+        }
     }
 
     var modelVariants: [ModelVariant] { ModelCatalog.variants }
