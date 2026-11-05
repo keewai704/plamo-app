@@ -1,0 +1,131 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  LLAMA_TAG: b12121
+
+jobs:
+  changes:
+    name: Detect changes
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    outputs:
+      code: ${{ steps.filter.outputs.code }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            code:
+              - 'PLaMoKit/**'
+              - 'PLaMoTranslate/**'
+              - 'PLaMoTranslateExtension/**'
+              - 'LlamaRuntime/**'
+              - 'Tests/**'
+              - 'project.yml'
+              - 'Makefile'
+              - 'scripts/**'
+              - 'fastlane/**'
+              - 'Gemfile'
+              - '.github/**'
+
+  test:
+    name: Build + unit + E2E
+    needs: changes
+    if: needs.changes.outputs.code == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-26
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/ios-setup
+
+      - name: Restore build cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .build/DerivedData/Build
+            .build/DerivedData/ModuleCache.noindex
+          key: dd-test-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            dd-test-${{ runner.os }}-
+
+      - name: Validate project and plists
+        run: |
+          make generate
+          plutil -lint \
+            PLaMoTranslate/Info.plist \
+            PLaMoTranslateExtension/Info.plist \
+            PLaMoTranslate/PLaMoTranslate.entitlements \
+            PLaMoTranslateExtension/PLaMoTranslateExtension.entitlements \
+            PLaMoTranslate/PrivacyInfo.xcprivacy
+
+      - name: Build for testing
+        run: make build-for-testing
+
+      - name: Unit tests
+        run: make test-unit
+
+      - name: E2E tests (XCUITest)
+        run: make test-ui
+
+      - name: Test summary
+        if: always()
+        run: ./scripts/ci/summarize-results.sh
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-results
+          path: .build/Logs
+          if-no-files-found: warn
+          retention-days: 7
+
+  device-build:
+    name: Device build (llama.cpp)
+    needs: changes
+    if: needs.changes.outputs.code == 'true' || github.event_name == 'workflow_dispatch'
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/ios-setup
+
+      - name: Restore llama.cpp archive
+        uses: actions/cache@v4
+        with:
+          path: .build/llama
+          key: llama-xcframework-${{ env.LLAMA_TAG }}
+
+      - name: Fetch llama.xcframework
+        run: make fetch-llama
+
+      - name: Restore build cache
+        uses: actions/cache@v4
+        with:
+          path: .build/DerivedData/Build
+          key: dd-device-${{ runner.os }}-${{ github.sha }}
+          restore-keys: |
+            dd-device-${{ runner.os }}-
+
+      - name: Unsigned device build
+        run: make build-device

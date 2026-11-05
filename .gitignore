@@ -1,0 +1,19 @@
+# Xcode / build output
+.build/
+build/
+DerivedData/
+*.xcresult
+*.xcworkspace/
+Kotoba.xcodeproj/
+
+# CI tool cache and downloaded inference runtime
+.ci/
+vendor/llama/
+
+# Fastlane
+fastlane/report.xml
+fastlane/screenshots/
+fastlane/test_output/
+
+# macOS
+.DS_Store

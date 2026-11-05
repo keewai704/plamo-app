@@ -1,0 +1,47 @@
+name: iOS setup
+description: Select Xcode, restore a cached XcodeGen binary, and verify the toolchain.
+
+inputs:
+  xcode-version:
+    description: Xcode version passed to setup-xcode.
+    required: false
+    default: latest-stable
+  xcodegen-version:
+    description: XcodeGen release tag.
+    required: false
+    default: "2.46.0"
+
+runs:
+  using: composite
+  steps:
+    - name: Select Xcode
+      uses: maxim-lobanov/setup-xcode@v1
+      with:
+        xcode-version: ${{ inputs.xcode-version }}
+
+    - name: Restore XcodeGen
+      id: xcodegen-cache
+      uses: actions/cache@v4
+      with:
+        path: .ci/tools
+        key: xcodegen-${{ runner.os }}-${{ inputs.xcodegen-version }}
+
+    - name: Install XcodeGen
+      if: steps.xcodegen-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p .ci/tools
+        curl -fsSL -o /tmp/xcodegen.zip "https://github.com/yonaskolb/XcodeGen/releases/download/${{ inputs.xcodegen-version }}/xcodegen.zip"
+        echo "4d9e34b62172d645eed6457cac13fc222569974098ef4ee9c3368bedf0196806  /tmp/xcodegen.zip" | shasum -a 256 -c -
+        ditto -x -k /tmp/xcodegen.zip .ci/tools
+
+    - name: Add XcodeGen to PATH
+      shell: bash
+      run: echo "${{ github.workspace }}/.ci/tools/xcodegen/bin" >> "$GITHUB_PATH"
+
+    - name: Show toolchain
+      shell: bash
+      run: |
+        xcodebuild -version
+        xcodegen --version
