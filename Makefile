@@ -68,6 +68,10 @@ build-device: generate fetch-llama ## Unsigned device build (verifies the llama.
 		CODE_SIGNING_ALLOWED=NO \
 		CODE_SIGNING_REQUIRED=NO \
 		COMPILER_INDEX_STORE_ENABLE=NO
+	@APP="$(DERIVED_DATA)/Build/Products/Release-iphoneos/Kotoba.app"; \
+	test -d "$$APP/Frameworks/llama.framework" || { echo "error: llama.framework was not embedded into $$APP" >&2; exit 1; }; \
+	test -d "$$APP/Extensions/PLaMoTranslateExtension.appex" || { echo "error: translation extension was not embedded into $$APP" >&2; exit 1; }; \
+	echo "Verified: llama.framework and the Translation UI Provider extension are in Kotoba.app"
 
 clean: ## Remove generated project and build products
 	rm -rf $(PROJECT) .build
