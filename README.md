@@ -117,7 +117,7 @@ llama.xcframework が無いままビルドすると **コンパイルエラー**
 
 ### Release（`.github/workflows/release.yml`）
 
-`v*` タグ（または手動実行で `upload` を選択）で TestFlight にアップロードします。
+`v*` タグ（または手動実行で `upload` を選択）で TestFlight にアップロードします。タグビルドでは、同じ署名済み IPA・SHA256・dSYM を **GitHub Release** にも添付します。
 
 ```bash
 git tag v0.1.0

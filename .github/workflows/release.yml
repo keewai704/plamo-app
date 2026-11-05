@@ -27,6 +27,8 @@ jobs:
     runs-on: macos-26
     environment: release
     timeout-minutes: 60
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -100,6 +102,37 @@ jobs:
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           APP_IDENTIFIER: jp.keewai.kotoba
         run: bundle exec fastlane ios beta
+
+      - name: Attach IPA to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          tag="${GITHUB_REF_NAME}"
+          ipa=""
+          for candidate in build/artifacts/*.ipa; do
+            if [ -f "${candidate}" ]; then ipa="${candidate}"; break; fi
+          done
+          if [ -z "${ipa}" ]; then
+            echo "::error::No IPA was produced by fastlane"
+            exit 1
+          fi
+
+          shasum -a 256 "${ipa}" > "${ipa}.sha256"
+
+          assets=("${ipa}" "${ipa}.sha256")
+          for dsym in build/artifacts/*.dSYM.zip; do
+            if [ -e "${dsym}" ]; then assets+=("${dsym}"); fi
+          done
+
+          if ! gh release view "${tag}" >/dev/null 2>&1; then
+            gh release create "${tag}" --title "Kotoba ${tag}" --generate-notes
+          fi
+
+          gh release upload "${tag}" "${assets[@]}" --clobber
+          echo "Uploaded to GitHub Release: ${tag}"
 
       - name: Upload artifacts
         if: always()
