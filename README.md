@@ -1,3 +1,5 @@
+[![CI](https://github.com/keewai704/plamo-app/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/keewai704/plamo-app/actions/workflows/ci.yml)
+
 # Kotoba — オンデバイス翻訳（PLaMo 3 Translate 0.8B）
 
 iOS 18.4 以降で **デフォルトの翻訳アプリ** として選べる、完全オンデバイスの翻訳アプリです。
