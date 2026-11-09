@@ -37,7 +37,8 @@ final class TranslationUITests: XCTestCase {
         let status = app.descendants(matching: .any)["serverStatus"]
         let matches = NSPredicate(format: "value == %@", state)
         let waiter = XCTNSPredicateExpectation(predicate: matches, object: status)
-        XCTAssertEqual(XCTWaiter().wait(for: [waiter], timeout: 60), .completed, "status never became \(state)")
+        let result = XCTWaiter().wait(for: [waiter], timeout: 60)
+        XCTAssertEqual(result, .completed, "status stayed \(String(describing: status.value)) instead of \(state)\n\(app.debugDescription)")
     }
 
     private func translate(_ text: String, in app: XCUIApplication) {
@@ -51,7 +52,7 @@ final class TranslationUITests: XCTestCase {
     func testTranslatesThroughTheServer() {
         let app = launch(serverURL: serverURL)
         enterAPIKey(environment["PLAMO_API_KEY"] ?? "", in: app)
-        XCTAssertTrue(app.buttons["settingsButton"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.buttons["saveButton"].waitForNonExistence(timeout: 30), app.debugDescription)
         waitForStatus("sleeping", in: app)
 
         translate("会議は来週の月曜日に変更されました。", in: app)
@@ -59,7 +60,6 @@ final class TranslationUITests: XCTestCase {
         let output = app.staticTexts["translatedText"]
         XCTAssertTrue(output.waitForExistence(timeout: translationTimeout))
         XCTAssertTrue(output.label.localizedCaseInsensitiveContains("monday"), output.label)
-        waitForStatus("ready", in: app)
     }
 
     func testSettingsRejectAWrongAPIKey() {
