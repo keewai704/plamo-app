@@ -20,7 +20,9 @@ final class TranslationUITests: XCTestCase {
     private var serverURL: String { environment["PLAMO_URL"] ?? "http://127.0.0.1:8000" }
 
     private func enterAPIKey(_ key: String, in app: XCUIApplication) {
-        app.buttons["settingsButton"].tap()
+        let settings = app.buttons["settingsButton"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 10), app.debugDescription)
+        settings.tap()
         let field = app.secureTextFields["apiKey"]
         XCTAssertTrue(field.waitForExistence(timeout: 10))
         field.tap()

@@ -29,12 +29,10 @@ struct TranslateView: View {
             .padding()
             .toolbar {
                 ToolbarItem(placement: .topBarLeading) { targetPicker }
-                ToolbarItem(placement: .topBarTrailing) {
-                    HStack(spacing: 12) {
-                        StatusDot(status: shownStatus)
-                        Button("設定", systemImage: "gearshape") { showingSettings = true }
-                            .accessibilityIdentifier("settingsButton")
-                    }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    StatusDot(status: shownStatus)
+                    Button("設定", systemImage: "gearshape") { showingSettings = true }
+                        .accessibilityIdentifier("settingsButton")
                 }
             }
             .navigationBarTitleDisplayMode(.inline)
