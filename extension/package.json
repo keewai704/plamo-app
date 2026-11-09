@@ -1,0 +1,24 @@
+{
+  "name": "kotoba-extension",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run --dir tests/unit",
+    "test:e2e": "vitest run --config vitest.e2e.config.ts",
+    "lint": "web-ext lint --source-dir dist/firefox --warnings-as-errors",
+    "package": "web-ext build --overwrite-dest --source-dir dist/chrome --artifacts-dir artifacts --filename kotoba-chrome.zip && web-ext build --overwrite-dest --source-dir dist/firefox --artifacts-dir artifacts --filename kotoba-firefox.zip"
+  },
+  "devDependencies": {
+    "@types/chrome": "0.3.7",
+    "@types/node": "26.6.6",
+    "@types/selenium-webdriver": "4.35.7",
+    "esbuild": "0.28.2",
+    "selenium-webdriver": "4.52.0",
+    "typescript": "7.0.2",
+    "vitest": "5.1.0",
+    "web-ext": "10.8.0"
+  }
+}

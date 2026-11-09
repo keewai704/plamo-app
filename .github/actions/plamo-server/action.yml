@@ -1,0 +1,67 @@
+name: PLaMo server
+description: Starts the pinned llama-server with the real model and waits until it translates.
+
+inputs:
+  api-key:
+    description: Bearer token the server will require.
+    required: true
+  port:
+    description: Port to listen on.
+    required: false
+    default: "8000"
+  gpu-layers:
+    description: Layers to offload; 0 on runners without a usable GPU.
+    required: false
+    default: ""
+  idle-seconds:
+    description: Idle time before the weights are released; short so that E2E can see it.
+    required: false
+    default: "3"
+
+runs:
+  using: composite
+  steps:
+    - name: Restore model
+      uses: actions/cache@v6
+      with:
+        path: ${{ github.workspace }}/.ci/models
+        key: plamo-model-${{ hashFiles('server/model.env') }}
+
+    - name: Restore llama.cpp
+      uses: actions/cache@v6
+      with:
+        path: server/.bin
+        key: llama-cpp-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('server/model.env') }}
+
+    - name: Install
+      shell: bash
+      env:
+        PLAMO_MODEL_DIR: ${{ github.workspace }}/.ci/models
+      run: |
+        server/install-llama.sh
+        server/fetch-model.sh
+
+    - name: Start server
+      shell: bash
+      env:
+        PLAMO_API_KEY: ${{ inputs.api-key }}
+        PLAMO_PORT: ${{ inputs.port }}
+        PLAMO_GPU_LAYERS: ${{ inputs.gpu-layers }}
+        PLAMO_IDLE_SECONDS: ${{ inputs.idle-seconds }}
+        PLAMO_MODEL_DIR: ${{ github.workspace }}/.ci/models
+      run: nohup server/serve.sh > "${RUNNER_TEMP}/llama-server.log" 2>&1 &
+
+    - name: Wait until ready
+      shell: bash
+      env:
+        PLAMO_API_KEY: ${{ inputs.api-key }}
+      run: |
+        base="http://127.0.0.1:${{ inputs.port }}"
+        for _ in $(seq 1 120); do
+          curl -sf "${base}/health" >/dev/null && break
+          sleep 1
+        done
+        if ! server/smoke.sh "${base}"; then
+          cat "${RUNNER_TEMP}/llama-server.log"
+          exit 1
+        fi
