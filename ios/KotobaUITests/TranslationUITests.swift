@@ -33,12 +33,11 @@ final class TranslationUITests: XCTestCase {
         app.buttons["saveButton"].tap()
     }
 
+    /// The iOS 26 toolbar wraps the dot in a second element with the same identifier.
     private func waitForStatus(_ state: String, in app: XCUIApplication) {
-        let status = app.descendants(matching: .any)["serverStatus"]
-        let matches = NSPredicate(format: "value == %@", state)
-        let waiter = XCTNSPredicateExpectation(predicate: matches, object: status)
-        let result = XCTWaiter().wait(for: [waiter], timeout: 60)
-        XCTAssertEqual(result, .completed, "status stayed \(String(describing: status.value)) instead of \(state)\n\(app.debugDescription)")
+        let matches = NSPredicate(format: "identifier == 'serverStatus' AND value == %@", state)
+        let status = app.descendants(matching: .any).matching(matches).firstMatch
+        XCTAssertTrue(status.waitForExistence(timeout: 60), "status never became \(state)\n\(app.debugDescription)")
     }
 
     private func translate(_ text: String, in app: XCUIApplication) {
