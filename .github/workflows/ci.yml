@@ -5,6 +5,7 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  workflow_call:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
@@ -14,118 +15,184 @@ permissions:
   contents: read
 
 env:
-  LLAMA_TAG: b12121
+  PLAMO_API_KEY: ci-key
+  PLAMO_URL: http://127.0.0.1:8000
 
 jobs:
   changes:
     name: Detect changes
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
       contents: read
       pull-requests: read
     outputs:
-      code: ${{ steps.filter.outputs.code }}
+      server: ${{ steps.filter.outputs.server }}
+      extension: ${{ steps.filter.outputs.extension }}
+      ios: ${{ steps.filter.outputs.ios }}
     steps:
-      - uses: actions/checkout@v4
-        with:
-          fetch-depth: 2
-      - uses: dorny/paths-filter@v3
+      - uses: actions/checkout@v7
+      - uses: dorny/paths-filter@v4
         id: filter
         with:
           filters: |
-            code:
-              - 'PLaMoKit/**'
-              - 'PLaMoTranslate/**'
-              - 'PLaMoTranslateExtension/**'
-              - 'LlamaRuntime/**'
-              - 'Tests/**'
-              - 'project.yml'
-              - 'Makefile'
-              - 'scripts/**'
-              - 'fastlane/**'
-              - 'Gemfile'
+            shared: &shared
+              - 'server/**'
               - '.github/**'
+              - 'ios/KotobaCore/Sources/KotobaCore/Resources/**'
+            server:
+              - 'server/**'
+              - 'flake.*'
+              - '.github/**'
+            extension:
+              - *shared
+              - 'extension/**'
+            ios:
+              - *shared
+              - 'ios/**'
 
-  test:
-    name: Build + unit + E2E
+  server:
+    name: Server (flake)
     needs: changes
-    if: needs.changes.outputs.code == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: macos-26
-    timeout-minutes: 45
+    if: always() && (needs.changes.result == 'skipped' || needs.changes.outputs.server == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PLAMO_MODEL_DIR: ${{ github.workspace }}/.ci/models
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      - uses: cachix/install-nix-action@v31.11.3
+
+      - name: Restore model
+        uses: actions/cache@v6
+        with:
+          path: ${{ env.PLAMO_MODEL_DIR }}
+          key: plamo-model-${{ hashFiles('server/model.env') }}
+
+      - run: server/fetch-model.sh
+
+      - name: Config handling
+        run: server/test-config.sh
+
+      - name: Build the vLLM package
+        run: nix build --no-link .#vllm
+
+      - name: Run the installed server from a config file
+        run: |
+          nix build .#default
+          config="${RUNNER_TEMP}/config.env"
+          printf 'PLAMO_IDLE_SECONDS=3\nPLAMO_API_KEY=%s\n' "${PLAMO_API_KEY}" > "${config}"
+          PLAMO_CONFIG="${config}" nohup result/bin/plamo-server > "${RUNNER_TEMP}/server.log" 2>&1 &
+          for _ in $(seq 1 120); do
+            curl -sf "${PLAMO_URL}/health" >/dev/null && break
+            sleep 1
+          done
+          if ! { server/smoke.sh "${PLAMO_URL}" && server/test-idle.sh "${PLAMO_URL}"; }; then
+            cat "${RUNNER_TEMP}/server.log"
+            exit 1
+          fi
+
+  extension:
+    name: Extension
+    needs: changes
+    # `changes` is skipped outside pull requests, and then everything runs.
+    if: always() && (needs.changes.result == 'skipped' || needs.changes.outputs.extension == 'true')
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+
+      - run: npm ci
+      - run: npm run build
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run package
+      - run: npm run lint
+
+      - uses: ./.github/actions/plamo-server
+        with:
+          api-key: ${{ env.PLAMO_API_KEY }}
+
+      # Branded Chrome ignores --load-extension, so this installs Chrome for Testing.
+      - uses: browser-actions/setup-chrome@v2
+        id: chrome
+        with:
+          chrome-version: stable
+          install-chromedriver: true
+
+      - name: E2E (Chrome and Firefox)
+        env:
+          CHROME_BIN: ${{ steps.chrome.outputs.chrome-path }}
+          CHROMEDRIVER: ${{ steps.chrome.outputs.chromedriver-path }}
+        run: GECKODRIVER="${GECKOWEBDRIVER}/geckodriver" FIREFOX_BIN="$(command -v firefox)" npm run test:e2e
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: extension-packages
+          path: extension/artifacts/*.zip
+          retention-days: 14
+
+  ios:
+    name: iOS and iPadOS
+    needs: changes
+    if: always() && (needs.changes.result == 'skipped' || needs.changes.outputs.ios == 'true')
+    runs-on: macos-26
+    timeout-minutes: 60
+    defaults:
+      run:
+        working-directory: ios
+    steps:
+      - uses: actions/checkout@v7
 
       - uses: ./.github/actions/ios-setup
 
       - name: Restore build cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: |
-            .build/DerivedData/Build
-            .build/DerivedData/ModuleCache.noindex
+            ios/.build/DerivedData/Build
+            ios/.build/DerivedData/ModuleCache.noindex
           key: dd-test-${{ runner.os }}-${{ github.sha }}
           restore-keys: |
             dd-test-${{ runner.os }}-
 
-      - name: Validate project and plists
-        run: |
-          make generate
-          plutil -lint \
-            PLaMoTranslate/Info.plist \
-            PLaMoTranslateExtension/Info.plist \
-            PLaMoTranslate/PLaMoTranslate.entitlements \
-            PLaMoTranslateExtension/PLaMoTranslateExtension.entitlements \
-            PLaMoTranslate/PrivacyInfo.xcprivacy
+      - name: Unit tests
+        run: make test-core
+
+      - name: Validate plists
+        run: plutil -lint Kotoba/Info.plist Kotoba/PrivacyInfo.xcprivacy
+
+      - name: Unsigned device build
+        run: make build-device
 
       - name: Build for testing
         run: make build-for-testing
 
-      - name: Unit tests
-        run: make test-unit
-
-      - name: E2E tests (XCUITest)
-        run: make test-ui
-
-      - name: Test summary
-        if: always()
-        run: ./scripts/ci/summarize-results.sh
-
-      - name: Upload test results
-        if: always()
-        uses: actions/upload-artifact@v4
+      # GitHub's macOS runners have no usable Metal device.
+      - uses: ./.github/actions/plamo-server
         with:
-          name: test-results
-          path: .build/Logs
+          api-key: ${{ env.PLAMO_API_KEY }}
+          gpu-layers: "0"
+
+      - name: E2E on iPhone
+        run: make test-ui DEVICE=iPhone
+
+      - name: E2E on iPad
+        run: make test-ui DEVICE=iPad
+
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: ios-test-results
+          path: ios/.build/Logs
           if-no-files-found: warn
           retention-days: 7
-
-  device-build:
-    name: Device build (llama.cpp)
-    needs: changes
-    if: needs.changes.outputs.code == 'true' || github.event_name == 'workflow_dispatch'
-    runs-on: macos-26
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: ./.github/actions/ios-setup
-
-      - name: Restore llama.cpp archive
-        uses: actions/cache@v4
-        with:
-          path: .build/llama
-          key: llama-xcframework-${{ env.LLAMA_TAG }}
-
-      - name: Fetch llama.xcframework
-        run: make fetch-llama
-
-      - name: Restore build cache
-        uses: actions/cache@v4
-        with:
-          path: .build/DerivedData/Build
-          key: dd-device-${{ runner.os }}-${{ github.sha }}
-          restore-keys: |
-            dd-device-${{ runner.os }}-
-
-      - name: Unsigned device build
-        run: make build-device

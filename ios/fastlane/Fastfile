@@ -1,0 +1,53 @@
+default_platform(:ios)
+
+platform :ios do
+  desc "Build a signed app and upload it to TestFlight"
+  lane :beta do
+    team_id = ENV.fetch("APPLE_TEAM_ID")
+    key_path = ENV.fetch("ASC_KEY_PATH")
+
+    api_key = app_store_connect_api_key(
+      key_id: ENV.fetch("ASC_KEY_ID"),
+      issuer_id: ENV.fetch("ASC_ISSUER_ID"),
+      key_filepath: key_path
+    )
+
+    version = ENV["MARKETING_VERSION"] || "0.1.0"
+    build_number = ENV["GITHUB_RUN_NUMBER"] || Time.now.utc.strftime("%Y%m%d%H%M")
+
+    authentication = [
+      "-allowProvisioningUpdates",
+      "-authenticationKeyPath '#{key_path}'",
+      "-authenticationKeyID #{ENV.fetch("ASC_KEY_ID")}",
+      "-authenticationKeyIssuerID #{ENV.fetch("ASC_ISSUER_ID")}",
+    ].join(" ")
+
+    build_app(
+      project: "Kotoba.xcodeproj",
+      scheme: "Kotoba",
+      configuration: "Release",
+      export_method: "app-store",
+      output_directory: "build/artifacts",
+      derived_data_path: ".build/DerivedData",
+      clean: false,
+      export_options: {
+        signingStyle: "automatic",
+        uploadSymbols: true,
+      },
+      xcargs: [
+        authentication,
+        "MARKETING_VERSION=#{version}",
+        "CURRENT_PROJECT_VERSION=#{build_number}",
+        "DEVELOPMENT_TEAM=#{team_id}",
+        "COMPILER_INDEX_STORE_ENABLE=NO",
+      ].join(" "),
+      export_xcargs: authentication
+    )
+
+    upload_to_testflight(
+      api_key: api_key,
+      app_identifier: ENV.fetch("APP_IDENTIFIER", "jp.keewai.kotoba"),
+      skip_waiting_for_build_processing: true
+    )
+  end
+end

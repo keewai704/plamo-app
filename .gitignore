@@ -1,19 +1,25 @@
-# Xcode / build output
+.DS_Store
+
+# Server
+.ci/
+server/.bin/
+
+# Extension
+node_modules/
+extension/dist/
+extension/artifacts/
+
+# iOS
 .build/
 build/
 DerivedData/
 *.xcresult
+*.xcodeproj/
 *.xcworkspace/
-Kotoba.xcodeproj/
-
-# CI tool cache and downloaded inference runtime
-.ci/
-vendor/llama/
-
-# Fastlane
-fastlane/report.xml
-fastlane/screenshots/
-fastlane/test_output/
-
-# macOS
-.DS_Store
+.swiftpm/
+ios/fastlane/report.xml
+ios/fastlane/test_output/
+ios/vendor/bundle/
+ios/.bundle/
+result
+result-*

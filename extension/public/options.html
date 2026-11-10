@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <title>Kotoba の設定</title>
+    <link rel="stylesheet" href="ui.css" />
+  </head>
+  <body class="options">
+    <form id="form">
+      <div class="row">
+        <input id="server-url" type="url" required aria-label="サーバー URL" placeholder="https://server.example" />
+        <span id="server-status" class="status" role="status"></span>
+      </div>
+      <input id="api-key" type="password" autocomplete="off" aria-label="API キー" placeholder="API キー" />
+      <fieldset class="segments" aria-label="日本語の文体">
+        <label><input type="radio" name="style" value="" />自動</label>
+        <label><input type="radio" name="style" value="polite" />です・ます</label>
+        <label><input type="radio" name="style" value="plain" />だ・である</label>
+      </fieldset>
+      <output id="error" aria-live="polite"></output>
+      <div class="row actions">
+        <button id="save" class="primary" type="submit">保存</button>
+      </div>
+    </form>
+    <script src="options.js"></script>
+  </body>
+</html>
