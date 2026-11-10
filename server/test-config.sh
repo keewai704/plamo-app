@@ -14,7 +14,7 @@ EOF
 chmod +x "${work}/llama-server"
 export PATH="${work}:${PATH}"
 export PLAMO_CONFIG="${work}/config.env"
-unset PLAMO_IDLE_SECONDS PLAMO_HOST PLAMO_PORT PLAMO_API_KEY PLAMO_GPU_LAYERS
+unset PLAMO_IDLE_SECONDS PLAMO_HOST PLAMO_PORT PLAMO_API_KEY PLAMO_GPU_LAYERS PLAMO_GPU_MEMORY PLAMO_BACKEND
 
 serve() { "${here}/serve.sh" 2>&1; }
 

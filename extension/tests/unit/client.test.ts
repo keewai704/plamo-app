@@ -127,6 +127,18 @@ describe("fetchStatus", () => {
     await expect(fetchStatus(settings)).resolves.toBe("sleeping");
   });
 
+  it("is ready on a vLLM server, which has no /props", async () => {
+    const mock = stubFetch(healthy(), new Response("{}", { status: 404 }), Response.json({ data: [] }));
+    await expect(fetchStatus(settings)).resolves.toBe("ready");
+    expect(mock.mock.calls[2]![0]).toBe("http://server:8000/v1/models");
+    expect(mock.mock.calls[2]![1]!.headers).toMatchObject({ Authorization: "Bearer secret" });
+  });
+
+  it("reports a key rejected by a vLLM server", async () => {
+    stubFetch(healthy(), new Response("{}", { status: 404 }), new Response("{}", { status: 401 }));
+    await expect(fetchStatus(settings)).resolves.toBe("unauthorized");
+  });
+
   it("is loading while /health answers 503", async () => {
     const mock = stubFetch(Response.json({ error: { message: "Loading model" } }, { status: 503 }));
     await expect(fetchStatus(settings)).resolves.toBe("loading");

@@ -6,7 +6,7 @@
 
 | ディレクトリ | 内容 |
 |---|---|
-| `server/` | llama-server の起動スクリプト。モデルと llama.cpp のバージョンは `model.env` で固定 |
+| `server/` | llama-server と vLLM の起動スクリプト。モデルと依存のバージョンは `model.env`、`vllm/` で固定 |
 | `ios/` | iPhone / iPad アプリ（SwiftUI、iOS 17 以降） |
 | `extension/` | Chrome / Firefox 拡張（Manifest V3） |
 
@@ -19,8 +19,12 @@
 ```bash
 nix profile install github:keewai704/plamo-app          # CPU（Linux）/ Metal（macOS）
 nix profile install github:keewai704/plamo-app#vulkan   # Vulkan GPU
+nix profile install github:keewai704/plamo-app#vllm     # NVIDIA Blackwell（x86_64 の NixOS）
 plamo-server                                            # 初回はモデルを取得して sha256 を検証
 ```
+
+`#vllm` は NVFP4 版の重みを vLLM で動かします。NVIDIA Blackwell 世代で最も高速ですが、起動から停止まで重みを GPU に保持します。
+初回起動時に `uv.lock` で固定した依存を `PLAMO_MODEL_DIR` に取得します。
 
 Nix を使わない場合は `llama-server` を PATH に入れるか（`brew install llama.cpp` など）、
 `server/install-llama.sh`（Linux x64 / macOS arm64）で固定バージョンを導入して `server/serve.sh` を実行します。
@@ -30,14 +34,15 @@ Nix を使わない場合は `llama-server` を PATH に入れるか（`brew ins
 
 | キー | 既定値 | 内容 |
 |---|---|---|
-| `PLAMO_IDLE_SECONDS` | `600` | アイドル時に重みをメモリに保持する秒数。`0` で無期限。解放後は次のリクエストで再読み込み |
+| `PLAMO_IDLE_SECONDS` | `600` | アイドル時に重みをメモリに保持する秒数。`0` で無期限。解放後は次のリクエストで再読み込み（llama.cpp のみ） |
 | `PLAMO_HOST` | `127.0.0.1` | 待ち受けアドレス |
 | `PLAMO_PORT` | `8000` | ポート |
 | `PLAMO_API_KEY` | なし | Bearer トークン。ループバック以外では必須。ファイルの権限は `600` に |
-| `PLAMO_GPU_LAYERS` | llama.cpp が判断 | GPU に載せる層の数 |
+| `PLAMO_GPU_LAYERS` | llama.cpp が判断 | GPU に載せる層の数（llama.cpp のみ） |
+| `PLAMO_GPU_MEMORY` | `0.25` | vLLM が確保する GPU メモリの割合（vLLM のみ） |
 | `PLAMO_MODEL_DIR` | `~/.local/share/plamo-server/models` | モデルの保存先 |
 
-llama-server 自体は TLS を提供しないので、LAN の外に出すときは
+llama-server と vLLM は TLS を提供しないので、LAN の外に出すときは
 `tailscale serve 8000` やリバースプロキシで HTTPS にしてください。
 iOS アプリが平文 HTTP で接続できるのはローカルネットワークだけです。
 
@@ -51,6 +56,8 @@ iOS アプリが平文 HTTP で接続できるのはローカルネットワー�
 | 輪郭のみ | 重みを解放済み。次の翻訳で読み込み |
 | 点滅（黄） | モデル読み込み中 |
 | 塗りつぶし（赤） | 接続できない、または API キーの誤り |
+
+vLLM は重みを読み込み終えてから待ち受けを始めるので、起動中は赤で表示されます。
 
 ## ブラウザ拡張
 

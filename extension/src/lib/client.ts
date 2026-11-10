@@ -82,6 +82,13 @@ export async function translate(settings: Settings, text: string, options: Trans
   return translated.join("\n");
 }
 
+/** vLLM has no /props and holds the weights for as long as it answers. */
+async function fetchVllmStatus(settings: Settings): Promise<ServerStatus> {
+  const models = await fetch(endpoint(settings, "/v1/models"), { headers: headers(settings) });
+  if (models.status === 401) return "unauthorized";
+  return models.ok ? "ready" : "unreachable";
+}
+
 /** Reports whether the weights are loaded. Neither request wakes a sleeping server. */
 export async function fetchStatus(settings: Settings): Promise<ServerStatus> {
   try {
@@ -91,6 +98,7 @@ export async function fetchStatus(settings: Settings): Promise<ServerStatus> {
 
     const props = await fetch(endpoint(settings, "/props"), { headers: headers(settings) });
     if (props.status === 401) return "unauthorized";
+    if (props.status === 404) return await fetchVllmStatus(settings);
     if (!props.ok) return "unreachable";
     return (await props.json()).is_sleeping ? "sleeping" : "ready";
   } catch {

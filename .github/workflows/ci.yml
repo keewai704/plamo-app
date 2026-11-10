@@ -74,6 +74,9 @@ jobs:
       - name: Config handling
         run: server/test-config.sh
 
+      - name: Build the vLLM package
+        run: nix build --no-link .#vllm
+
       - name: Run the installed server from a config file
         run: |
           nix build .#default

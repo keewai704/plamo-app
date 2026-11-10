@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Starts llama-server with PLaMo 3 Translate 0.8B.
+# Starts PLaMo 3 Translate 0.8B on llama-server, or on vLLM when PLAMO_BACKEND=vllm.
 #
 # Settings come from the environment, then from the config file
 # (PLAMO_CONFIG, default ~/.config/plamo-server/config.env; see config.example.env).
@@ -15,7 +15,7 @@ if [[ -f "${config}" ]]; then
     if [[ -z "${key}" || "${key}" == \#* ]]; then
       continue
     fi
-    if [[ ! "${key}" =~ ^PLAMO_(HOST|PORT|API_KEY|GPU_LAYERS|IDLE_SECONDS|MODEL_DIR)$ ]]; then
+    if [[ ! "${key}" =~ ^PLAMO_(HOST|PORT|API_KEY|GPU_LAYERS|GPU_MEMORY|IDLE_SECONDS|MODEL_DIR)$ ]]; then
       echo "error: unknown setting ${key} in ${config}" >&2
       exit 1
     fi
@@ -44,6 +44,11 @@ case "${host}" in
     fi
     ;;
 esac
+
+if [[ "${PLAMO_BACKEND:-}" == vllm ]]; then
+  export PLAMO_HOST="${host}" PLAMO_PORT="${port}"
+  exec "${here}/vllm/serve.sh"
+fi
 
 if command -v llama-server >/dev/null 2>&1; then
   llama_server=llama-server

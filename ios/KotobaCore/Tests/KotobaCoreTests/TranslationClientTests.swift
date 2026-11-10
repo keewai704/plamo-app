@@ -117,6 +117,20 @@ final class TranslationClientTests: XCTestCase {
         XCTAssertEqual(status, .sleeping)
     }
 
+    func testStatusIsReadyOnAVLLMServer() async {
+        let server = StubServer([(200, "{}"), (404, "{}"), (200, #"{"data":[]}"#)])
+        let status = await server.client().status()
+        XCTAssertEqual(status, .ready)
+        XCTAssertEqual(server.requests.map(\.url?.path), ["/health", "/props", "/v1/models"])
+        XCTAssertEqual(server.requests[2].value(forHTTPHeaderField: "Authorization"), "Bearer secret")
+    }
+
+    func testStatusReportsAKeyRejectedByAVLLMServer() async {
+        let server = StubServer([(200, "{}"), (404, "{}"), (401, "{}")])
+        let status = await server.client().status()
+        XCTAssertEqual(status, .unauthorized)
+    }
+
     func testStatusIsLoadingDuring503() async {
         let server = StubServer([(503, "{}")])
         let status = await server.client().status()

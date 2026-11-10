@@ -43,7 +43,7 @@ public enum TranslationError: LocalizedError, Equatable {
     }
 }
 
-/// Talks to llama-server's OpenAI-compatible API.
+/// Talks to the OpenAI-compatible API of llama-server or vLLM.
 public struct TranslationClient: Sendable {
     public typealias Transport = @Sendable (URLRequest) async throws -> (Data, URLResponse)
 
@@ -100,11 +100,19 @@ public struct TranslationClient: Sendable {
 
             let (data, props) = try await exchange(makeRequest(path: "/props"))
             if props == 401 { return .unauthorized }
+            if props == 404 { return try await vllmStatus() }
             guard (200..<300).contains(props) else { return .unreachable }
             return try JSONDecoder().decode(Props.self, from: data).isSleeping ? .sleeping : .ready
         } catch {
             return .unreachable
         }
+    }
+
+    /// vLLM has no `/props` and holds the weights for as long as it answers.
+    private func vllmStatus() async throws -> ServerStatus {
+        let (_, models) = try await exchange(makeRequest(path: "/v1/models"))
+        if models == 401 { return .unauthorized }
+        return (200..<300).contains(models) ? .ready : .unreachable
     }
 
     private func makeRequest(path: String) throws -> URLRequest {
