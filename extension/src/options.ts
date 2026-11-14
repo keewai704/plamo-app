@@ -9,6 +9,20 @@ const auto = document.querySelector<HTMLInputElement>("#auto")!;
 const error = document.querySelector<HTMLOutputElement>("#error")!;
 const status = new StatusView(document.querySelector<HTMLElement>("#server-status")!);
 
+const ALL_SITES: chrome.permissions.Permissions = {
+  origins: ["http://*/*", "https://*/*"],
+};
+
+const permissions = (
+  globalThis as {
+    browser?: { permissions: { request: (requested: chrome.permissions.Permissions) => Promise<boolean> } };
+  }
+).browser?.permissions;
+
+function requestAllSites(): Promise<boolean> {
+  return permissions ? permissions.request(ALL_SITES) : chrome.permissions.request(ALL_SITES);
+}
+
 function validServerUrl(value: string): boolean {
   try {
     const { protocol } = new URL(value);
@@ -18,7 +32,14 @@ function validServerUrl(value: string): boolean {
   }
 }
 
-async function finishSave(values: Pick<Settings, "serverUrl" | "apiKey" | "form" | "autoTranslate">): Promise<void> {
+async function finishSave(
+  values: Pick<Settings, "serverUrl" | "apiKey" | "form" | "autoTranslate">,
+  granted: Promise<boolean>,
+): Promise<void> {
+  if (!(await granted)) {
+    error.textContent = "すべてのサイトへのアクセスが許可されていません。もう一度保存してください";
+    return;
+  }
   await saveSettings({ ...values, configured: true });
   error.textContent = STATUS_ERRORS[await status.refresh()] ?? "";
 }
@@ -31,12 +52,16 @@ form.addEventListener("submit", (event) => {
     return;
   }
   const style = form.querySelector<HTMLInputElement>('input[name="style"]:checked')!;
-  void finishSave({
-    serverUrl: url,
-    apiKey: apiKey.value.trim(),
-    form: style.value as Form,
-    autoTranslate: auto.checked,
-  });
+  const granted = requestAllSites().catch(() => false);
+  void finishSave(
+    {
+      serverUrl: url,
+      apiKey: apiKey.value.trim(),
+      form: style.value as Form,
+      autoTranslate: auto.checked,
+    },
+    granted,
+  );
 });
 
 void loadSettings().then((settings) => {

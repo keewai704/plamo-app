@@ -13,8 +13,9 @@ const manifest = {
   action: { default_popup: "popup.html", default_icon: { 16: "icons/icon-16.png", 32: "icons/icon-32.png" } },
   options_ui: { page: "options.html", open_in_tab: false },
   permissions: ["storage", "contextMenus", "scripting"],
-  // Pages are translated where they open, so the extension reads them on every site.
-  host_permissions: ["http://*/*", "https://*/*"],
+  // The default server needs no prompt; other origins are requested when the server is saved.
+  host_permissions: ["http://127.0.0.1/*", "http://localhost/*"],
+  optional_host_permissions: ["http://*/*", "https://*/*"],
   content_scripts: [
     {
       matches: ["http://*/*", "https://*/*"],
