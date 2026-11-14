@@ -133,12 +133,15 @@ function unitText(element: Element): string {
   return inlineText(element).replace(/\s+/g, " ").trim();
 }
 
-/** A block that is only a link is a file name or a menu item, not prose. */
-function isLinkOnly(element: HTMLElement, text: string): boolean {
-  for (const link of element.querySelectorAll("a, button, summary")) {
-    if (unitText(link) === text) return true;
+/** Adds the translation after any leading icon, so that icons stay in front of the label. */
+function insertTranslation(element: Element, text: string): Text {
+  const node = document.createTextNode(text);
+  let anchor: Node | null = element.firstChild;
+  while (anchor && anchor.nodeType === Node.ELEMENT_NODE && !/\p{L}/u.test((anchor as Element).textContent ?? "")) {
+    anchor = anchor.nextSibling;
   }
-  return false;
+  element.insertBefore(node, anchor);
+  return node;
 }
 
 /** File names and identifiers, which read worse translated. */
@@ -146,24 +149,54 @@ function looksLikeCode(text: string): boolean {
   return !/\s/.test(text) && /[._/\\]/.test(text) && /\p{L}/u.test(text);
 }
 
-/** Leaf blocks of prose: blocks that have no smaller block of their own inside them. */
+/** The links, buttons and summaries of a block that carry a label. */
+function labelsOf(element: HTMLElement): HTMLElement[] {
+  return [...element.querySelectorAll<HTMLElement>("a, button, summary")];
+}
+
+/**
+ * Leaf blocks of prose. A block that is only a link, or a list of labels, is
+ * translated link by link: a file name stays as it is, and labels are not run
+ * together into one sentence.
+ */
 function collectUnits(): HTMLElement[] {
   const body = document.body;
   if (!body) return [];
   const candidates = new Set<HTMLElement>();
   for (const element of body.querySelectorAll<HTMLElement>(UNIT_SELECTOR)) {
     if (element.closest(EXCLUDED) || element.closest(SKIPPED) || element.isContentEditable) continue;
-    const text = unitText(element);
-    if (!/\p{L}/u.test(text) || isLinkOnly(element, text) || looksLikeCode(text)) continue;
+    if (!/\p{L}/u.test(unitText(element))) continue;
     candidates.add(element);
   }
+
   const nested = new Set<HTMLElement>();
   for (const element of candidates) {
     for (let parent = element.parentElement; parent; parent = parent.parentElement) {
       if (candidates.has(parent)) nested.add(parent);
     }
   }
-  return [...candidates].filter((element) => !nested.has(element));
+
+  const units = new Set<HTMLElement>();
+  for (const element of candidates) {
+    if (nested.has(element)) continue;
+    const text = unitText(element);
+    if (looksLikeCode(text)) continue;
+
+    const links = labelsOf(element);
+    const whole = links.find((link) => unitText(link) === text);
+    if (whole) {
+      // A single label: file names and one-word menu items stay as they are.
+      if (text.includes(" ")) units.add(whole);
+      continue;
+    }
+    if (links.length >= 2 && !/[.!?。！？]$/.test(text)) {
+      // A menu or a list of labels: translate each one where it stands.
+      for (const link of links) if (unitText(link).includes(" ")) units.add(link);
+      continue;
+    }
+    units.add(element);
+  }
+  return [...units];
 }
 
 interface Unit {
@@ -305,9 +338,7 @@ class PageSession {
     if (!translated || translated === unit.text) return;
     this.replaced.add(unit.element);
     this.removeText(unit.element);
-    const node = document.createTextNode(translated);
-    this.inserted.set(unit.element, node);
-    unit.element.prepend(node);
+    this.inserted.set(unit.element, insertTranslation(unit.element, translated));
   }
 }
 

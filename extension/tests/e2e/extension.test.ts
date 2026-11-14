@@ -16,6 +16,8 @@ const FIXTURE = `<!doctype html><html lang="en"><body>
   <p id="plain">${PLAIN}</p>
   <p id="mixed">Please read <a id="link" href="#">the manual</a> before you start.</p>
   <p id="with-icon">Please read the <img id="icon" alt="manual icon" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="> manual before you start.</p>
+  <div id="labels"><a id="label-a" href="#one">Detect changes</a> <a id="label-b" href="#two">Show more</a></div>
+  <p id="file-name"><a id="file-link" href="#three">assets</a></p>
   <pre id="pre">const untouched = "code stays";</pre>
   <p id="opt-out" translate="no">Brand name stays</p>
   <div id="late"></div>
@@ -161,6 +163,14 @@ describe.each([
     );
     expect(await textOf(driver, "with-icon")).not.toContain("manual icon");
 
+    // Labels are translated in place, each keeping its link.
+    expect(await textOf(driver, "label-a")).toMatch(JAPANESE);
+    expect(await textOf(driver, "label-b")).toMatch(JAPANESE);
+    expect(await driver.executeScript("return document.querySelector('#label-a')?.getAttribute('href')")).toBe("#one");
+    // A file name in a link is left alone.
+    expect(await textOf(driver, "file-link")).toBe("assets");
+    expect(await driver.executeScript("return document.querySelector('#file-link')?.getAttribute('href')")).toBe("#three");
+
     await driver.close();
     await driver.switchTo().window(extensionHandle);
   });
@@ -226,6 +236,7 @@ describe.each([
     await driver.switchTo().window(pageHandle);
     expect(await textOf(driver, "plain")).toBe(PLAIN);
     expect(await textOf(driver, "mixed")).toBe("Please read the manual before you start.");
+    expect(await textOf(driver, "label-a")).toBe("Detect changes");
     expect(await driver.executeScript("return document.querySelector('#link')?.textContent ?? null")).toBe("the manual");
 
     // Reloading the page does not translate it by itself.
