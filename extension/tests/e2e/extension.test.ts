@@ -138,10 +138,11 @@ describe.each([
     await waitForStatus(driver, "sleeping");
   });
 
-  it("translates a page as it opens, replacing the original text", async () => {
-    const { extensionHandle, pageHandle } = await openFixture(session);
-    await driver.switchTo().window(pageHandle);
+  it("translates the page when asked, replacing the original text", async () => {
+    const { extensionHandle, pageHandle, tabId } = await openFixture(session);
+    await expect(sendToBackground(driver, { type: "set-page", tabId, active: true })).resolves.toEqual({ active: true });
 
+    await driver.switchTo().window(pageHandle);
     const translated = await waitForText(driver, "plain", JAPANESE);
     expect(translated).toMatch(/月曜/);
     expect(translated).not.toContain("The meeting");
@@ -159,6 +160,8 @@ describe.each([
 
   it("re-translates the page when the target language changes", async () => {
     const { extensionHandle, pageHandle, tabId } = await openFixture(session);
+    await expect(sendToBackground(driver, { type: "set-page", tabId, active: true })).resolves.toEqual({ active: true });
+
     await driver.switchTo().window(pageHandle);
     const japanese = await waitForText(driver, "plain", JAPANESE);
 
@@ -203,8 +206,10 @@ describe.each([
     await driver.switchTo().window(extensionHandle);
   });
 
-  it("restores the original and leaves the site untranslated next time", async () => {
+  it("restores the original text", async () => {
     const { extensionHandle, pageHandle, tabId } = await openFixture(session);
+    await expect(sendToBackground(driver, { type: "set-page", tabId, active: true })).resolves.toEqual({ active: true });
+
     await driver.switchTo().window(pageHandle);
     await waitForText(driver, "plain", /月曜/);
     await driver.switchTo().window(extensionHandle);
@@ -216,21 +221,11 @@ describe.each([
     expect(await textOf(driver, "mixed")).toBe("Please read the manual before you start.");
     expect(await driver.executeScript("return document.querySelector('#link')?.textContent ?? null")).toBe("the manual");
 
-    // Turning it off is remembered for the site.
+    // Reloading the page does not translate it by itself.
     await driver.navigate().refresh();
-    await driver.sleep(5000);
+    await driver.sleep(3000);
     expect(await textOf(driver, "plain")).toBe(PLAIN);
 
-    await driver.switchTo().window(extensionHandle);
-    const excluded = (await driver.executeAsyncScript(
-      "const done = arguments[0]; chrome.storage.local.get('excludedOrigins').then(({ excludedOrigins = [] }) => done(excludedOrigins));",
-    )) as string[];
-    expect(excluded).toEqual([new URL(fixtureUrl).origin]);
-
-    // Turning it back on forgets the exception.
-    await expect(sendToBackground(driver, { type: "set-page", tabId, active: true })).resolves.toEqual({ active: true });
-
-    await driver.switchTo().window(pageHandle);
     await driver.close();
     await driver.switchTo().window(extensionHandle);
   });

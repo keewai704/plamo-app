@@ -33,18 +33,12 @@ export async function startChrome(): Promise<ExtensionSession> {
 }
 
 /**
- * Headless Chrome cannot answer the prompt for optional host permissions, so the
- * test build is granted the sites the shipped build asks for when a server is saved.
+ * The shipped build may only read a page after the reader invokes it, which grants
+ * activeTab. Headless Chrome cannot simulate that, so the test build is granted
+ * every site and injects the same way the background does after a click.
  */
 async function chromeTestBuild(): Promise<string> {
   const source = resolve("dist/chrome");
-  const shipped = JSON.parse(await readFile(join(source, "manifest.json"), "utf8")) as {
-    optional_host_permissions?: string[];
-  };
-  if (!shipped.optional_host_permissions?.includes("https://*/*")) {
-    throw new Error("dist/chrome must offer all-site access as an optional permission");
-  }
-
   const target = await mkdtemp(join(tmpdir(), "kotoba-chrome-"));
   await cp(source, target, { recursive: true });
   const manifestPath = join(target, "manifest.json");

@@ -54,10 +54,7 @@ async function refresh(): Promise<void> {
   }
 
   renderPage(await pageState(tab.id));
-  if (!settings.configured) showNote("設定でサーバーを指定してください");
-  else if (!settings.autoTranslate) showNote("自動翻訳はオフです");
-  else if (settings.excludedOrigins.includes(origin)) showNote("このサイトは自動翻訳しません");
-  else showNote("");
+  showNote("");
 }
 
 async function togglePage(): Promise<void> {
@@ -72,9 +69,7 @@ async function togglePage(): Promise<void> {
     return;
   }
   renderPage(state.active);
-  const settings = await loadSettings();
-  if (!state.active) showNote("このサイトは自動翻訳しません");
-  else showNote(settings.autoTranslate ? "" : "自動翻訳はオフです");
+  showNote("");
 }
 
 async function changeTarget(): Promise<void> {

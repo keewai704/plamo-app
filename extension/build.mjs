@@ -12,17 +12,10 @@ const manifest = {
   icons: { 16: "icons/icon-16.png", 32: "icons/icon-32.png", 48: "icons/icon-48.png", 128: "icons/icon-128.png" },
   action: { default_popup: "popup.html", default_icon: { 16: "icons/icon-16.png", 32: "icons/icon-32.png" } },
   options_ui: { page: "options.html", open_in_tab: false },
-  permissions: ["storage", "contextMenus", "scripting"],
-  // The default server needs no prompt; other origins are requested when the server is saved.
+  // The page is read only when the reader asks for it, so no site access is asked up front.
+  permissions: ["storage", "contextMenus", "activeTab", "scripting"],
   host_permissions: ["http://127.0.0.1/*", "http://localhost/*"],
   optional_host_permissions: ["http://*/*", "https://*/*"],
-  content_scripts: [
-    {
-      matches: ["http://*/*", "https://*/*"],
-      js: ["content.js"],
-      run_at: "document_idle",
-    },
-  ],
   commands: {
     "toggle-page": {
       suggested_key: { default: "Alt+Shift+T" },

@@ -1,6 +1,6 @@
 import { needsTranslation } from "./lib/language";
 import type { BackgroundMessage, ContentMessage, PageState, TranslateResult } from "./lib/messages";
-import { loadSettings, setOriginAuto, type Settings } from "./lib/settings";
+import { loadSettings, type Settings } from "./lib/settings";
 
 declare global {
   // The script is injected on every command; only the first injection may register listeners.
@@ -17,6 +17,8 @@ const EXCLUDED =
 const UNIT_SELECTOR =
   "p,li,td,th,dt,dd,h1,h2,h3,h4,h5,h6,blockquote,figcaption,summary,caption,legend,label," +
   "div,section,article,main,header,footer,aside,nav,form,fieldset";
+/** Chrome shared by every page: menus and the footer. */
+const SKIPPED = "nav,footer,[role='navigation'],[role='contentinfo']";
 
 function requestTranslation(text: string): Promise<TranslateResult> {
   const message: BackgroundMessage = { type: "translate", text };
@@ -130,14 +132,28 @@ function unitText(element: Element): string {
   return inlineText(element).replace(/\s+/g, " ").trim();
 }
 
+/** A block that is only a link is a file name or a menu item, not prose. */
+function isLinkOnly(element: HTMLElement, text: string): boolean {
+  for (const link of element.querySelectorAll("a, button, summary")) {
+    if (unitText(link) === text) return true;
+  }
+  return false;
+}
+
+/** File names and identifiers, which read worse translated. */
+function looksLikeCode(text: string): boolean {
+  return !/\s/.test(text) && /[._/\\]/.test(text) && /\p{L}/u.test(text);
+}
+
 /** Leaf blocks of prose: blocks that have no smaller block of their own inside them. */
 function collectUnits(): HTMLElement[] {
   const body = document.body;
   if (!body) return [];
   const candidates = new Set<HTMLElement>();
   for (const element of body.querySelectorAll<HTMLElement>(UNIT_SELECTOR)) {
-    if (element.closest(EXCLUDED) || element.isContentEditable) continue;
-    if (!/\p{L}/u.test(unitText(element))) continue;
+    if (element.closest(EXCLUDED) || element.closest(SKIPPED) || element.isContentEditable) continue;
+    const text = unitText(element);
+    if (!/\p{L}/u.test(text) || isLinkOnly(element, text) || looksLikeCode(text)) continue;
     candidates.add(element);
   }
   const nested = new Set<HTMLElement>();
@@ -271,23 +287,18 @@ class PageSession {
 // --- Page commands ---------------------------------------------------------
 
 let session: PageSession | undefined;
-/** Set by any command from the reader, so that a late automatic start stays out of the way. */
-let manual = false;
 
 function failure(error: unknown): PageState {
   return { active: false, error: messageOf(error) };
 }
 
 async function setPage(active: boolean): Promise<PageState> {
-  manual = true;
   if (active && !session?.active) {
     session = new PageSession(await loadSettings());
-    await setOriginAuto(location.origin, true);
   } else if (!active && session) {
     const current = session;
     session = undefined;
     current.restore();
-    await setOriginAuto(location.origin, false);
   }
   return { active: session?.active ?? false };
 }
@@ -298,20 +309,10 @@ async function togglePage(): Promise<PageState> {
 
 /** Starts over with the current settings, so that a new target language is used. */
 async function retranslate(): Promise<PageState> {
-  manual = true;
   const settings = await loadSettings();
   session?.restore();
   session = new PageSession(settings);
   return { active: session.active };
-}
-
-async function autoStart(): Promise<void> {
-  if (window !== window.top) return;
-  const settings = await loadSettings();
-  if (manual || session || !settings.configured || !settings.autoTranslate) return;
-  if (settings.excludedOrigins.includes(location.origin)) return;
-  if (!document.body) return;
-  session = new PageSession(settings);
 }
 
 if (!globalThis.__kotobaLoaded) {
@@ -336,5 +337,4 @@ if (!globalThis.__kotobaLoaded) {
         break;
     }
   });
-  void autoStart();
 }

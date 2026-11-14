@@ -197,13 +197,6 @@ svg {
   outline-offset: 1px;
 }
 
-.check {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  cursor: pointer;
-}
-
 .note {
   margin: 0;
   color: var(--muted);

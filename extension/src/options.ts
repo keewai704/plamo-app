@@ -5,68 +5,55 @@ import { StatusView } from "./lib/status-view";
 const form = document.querySelector<HTMLFormElement>("#form")!;
 const serverUrl = document.querySelector<HTMLInputElement>("#server-url")!;
 const apiKey = document.querySelector<HTMLInputElement>("#api-key")!;
-const auto = document.querySelector<HTMLInputElement>("#auto")!;
 const error = document.querySelector<HTMLOutputElement>("#error")!;
 const status = new StatusView(document.querySelector<HTMLElement>("#server-status")!);
 
-const ALL_SITES: chrome.permissions.Permissions = {
-  origins: ["http://*/*", "https://*/*"],
-};
-
+// Firefox only promises the WebExtension namespace versions of these calls.
 const permissions = (
   globalThis as {
     browser?: { permissions: { request: (requested: chrome.permissions.Permissions) => Promise<boolean> } };
   }
 ).browser?.permissions;
 
-function requestAllSites(): Promise<boolean> {
-  return permissions ? permissions.request(ALL_SITES) : chrome.permissions.request(ALL_SITES);
+function requestOrigin(origin: string): Promise<boolean> {
+  const requested = { origins: [origin] };
+  return permissions ? permissions.request(requested) : chrome.permissions.request(requested);
 }
 
-function validServerUrl(value: string): boolean {
+function originPattern(url: string): string | undefined {
   try {
-    const { protocol } = new URL(value);
-    return protocol === "http:" || protocol === "https:";
+    const { protocol, hostname } = new URL(url);
+    return protocol === "http:" || protocol === "https:" ? `${protocol}//${hostname}/*` : undefined;
   } catch {
-    return false;
+    return undefined;
   }
 }
 
-async function finishSave(
-  values: Pick<Settings, "serverUrl" | "apiKey" | "form" | "autoTranslate">,
-  granted: Promise<boolean>,
-): Promise<void> {
-  if (!(await granted)) {
-    error.textContent = "すべてのサイトへのアクセスが許可されていません。もう一度保存してください";
+async function finishSave(values: Pick<Settings, "serverUrl" | "apiKey" | "form">, granted: Promise<boolean>): Promise<void> {
+  if (!(await granted.catch(() => false))) {
+    error.textContent = "サーバーへのアクセスが許可されていません";
     return;
   }
-  await saveSettings({ ...values, configured: true });
+  await saveSettings(values);
   error.textContent = STATUS_ERRORS[await status.refresh()] ?? "";
 }
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
   const url = serverUrl.value.trim();
-  if (!validServerUrl(url)) {
+  const origin = originPattern(url);
+  if (!origin) {
     error.textContent = "URL が正しくありません";
     return;
   }
   const style = form.querySelector<HTMLInputElement>('input[name="style"]:checked')!;
-  const granted = requestAllSites().catch(() => false);
-  void finishSave(
-    {
-      serverUrl: url,
-      apiKey: apiKey.value.trim(),
-      form: style.value as Form,
-      autoTranslate: auto.checked,
-    },
-    granted,
-  );
+  // permissions.request must run synchronously inside the user gesture.
+  const granted = requestOrigin(origin);
+  void finishSave({ serverUrl: url, apiKey: apiKey.value.trim(), form: style.value as Form }, granted);
 });
 
 void loadSettings().then((settings) => {
   serverUrl.value = settings.serverUrl;
   apiKey.value = settings.apiKey;
-  auto.checked = settings.autoTranslate;
   form.querySelector<HTMLInputElement>(`input[name="style"][value="${settings.form}"]`)!.checked = true;
 });
