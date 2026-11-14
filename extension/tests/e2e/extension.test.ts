@@ -10,9 +10,10 @@ import { startChrome, startFirefox, type ExtensionSession } from "./browsers";
 const serverUrl = process.env.PLAMO_URL ?? "http://127.0.0.1:8000";
 const apiKey = process.env.PLAMO_API_KEY ?? "";
 const JAPANESE = /[ぁ-んァ-ヶ一-龠]/;
+const PLAIN = "The meeting has been rescheduled to next Monday.";
 
 const FIXTURE = `<!doctype html><html lang="en"><body>
-  <p id="plain">The meeting has been rescheduled to next Monday.</p>
+  <p id="plain">${PLAIN}</p>
   <p id="mixed">Please read <a id="link" href="#">the manual</a> before you start.</p>
   <pre id="pre">const untouched = "code stays";</pre>
   <p id="opt-out" translate="no">Brand name stays</p>
@@ -45,26 +46,14 @@ async function textOf(driver: WebDriver, id: string): Promise<string> {
 }
 
 async function waitForText(driver: WebDriver, id: string, pattern: RegExp): Promise<string> {
-  await driver.wait(async () => pattern.test(await textOf(driver, id)), 120_000, `#${id} never matched ${pattern}`);
-  return textOf(driver, id);
-}
-
-/** The translation added below the block, or null when there is none. */
-function translationOf(driver: WebDriver, selector: string): Promise<string | null> {
-  return driver.executeScript<string | null>(
-    `return document.querySelector(${JSON.stringify(`${selector} .kotoba-tr`)})?.textContent ?? null;`,
-  );
-}
-
-async function waitForTranslation(driver: WebDriver, selector: string, pattern: RegExp): Promise<string> {
   let seen: string | null = null;
   await driver.wait(
     async () => {
-      seen = await translationOf(driver, selector);
+      seen = await driver.executeScript<string | null>(`return document.getElementById(${JSON.stringify(id)})?.textContent ?? null;`);
       return seen !== null && pattern.test(seen);
     },
     120_000,
-    `${selector} was never translated`,
+    `#${id} never matched ${pattern}`,
   );
   return seen!;
 }
@@ -148,23 +137,20 @@ describe.each([
     await waitForStatus(driver, "sleeping");
   });
 
-  it("translates a page as it opens, below the original", async () => {
+  it("translates a page as it opens, replacing the original text", async () => {
     const { extensionHandle, pageHandle } = await openFixture(session);
     await driver.switchTo().window(pageHandle);
 
-    await expect(waitForTranslation(driver, "#plain", JAPANESE)).resolves.toMatch(/月曜/);
-    await waitForTranslation(driver, "#mixed", JAPANESE);
+    const translated = await waitForText(driver, "plain", JAPANESE);
+    expect(translated).toMatch(/月曜/);
+    expect(translated).not.toContain("The meeting");
+    await waitForText(driver, "mixed", JAPANESE);
     // Prose the page adds later is translated too.
-    await waitForTranslation(driver, "#late-text", JAPANESE);
+    await waitForText(driver, "late-text", JAPANESE);
 
-    // The original stays where it was, and links keep their own text.
-    expect(await driver.executeScript<string>("return document.querySelector('#plain').firstChild.textContent")).toContain(
-      "The meeting has been rescheduled",
-    );
-    expect(await driver.executeScript<string>("return document.querySelector('#link').textContent")).toBe("the manual");
-    // Code and opted-out blocks are left alone.
-    expect(await translationOf(driver, "#pre")).toBeNull();
-    expect(await translationOf(driver, "#opt-out")).toBeNull();
+    // Code and opted-out blocks keep their text.
+    expect(await textOf(driver, "pre")).toBe('const untouched = "code stays";');
+    expect(await textOf(driver, "opt-out")).toBe("Brand name stays");
 
     await driver.close();
     await driver.switchTo().window(extensionHandle);
@@ -173,7 +159,7 @@ describe.each([
   it("re-translates the page when the target language changes", async () => {
     const { extensionHandle, pageHandle, tabId } = await openFixture(session);
     await driver.switchTo().window(pageHandle);
-    const japanese = await waitForTranslation(driver, "#plain", JAPANESE);
+    const japanese = await waitForText(driver, "plain", JAPANESE);
 
     await driver.switchTo().window(extensionHandle);
     await driver.executeScript("return chrome.storage.local.set({ target: 'fr' })");
@@ -182,8 +168,8 @@ describe.each([
     await driver.switchTo().window(pageHandle);
     await driver.wait(
       async () => {
-        const translation = await translationOf(driver, "#plain");
-        return translation !== null && translation !== japanese;
+        const text = await textOf(driver, "plain");
+        return text !== japanese && text !== PLAIN;
       },
       120_000,
       "the page kept the old translation",
@@ -219,19 +205,20 @@ describe.each([
   it("restores the original and leaves the site untranslated next time", async () => {
     const { extensionHandle, pageHandle, tabId } = await openFixture(session);
     await driver.switchTo().window(pageHandle);
-    await waitForTranslation(driver, "#plain", /月曜/);
+    await waitForText(driver, "plain", /月曜/);
     await driver.switchTo().window(extensionHandle);
 
     await expect(sendToBackground(driver, { type: "set-page", tabId, active: false })).resolves.toEqual({ active: false });
 
     await driver.switchTo().window(pageHandle);
-    expect(await driver.executeScript("return document.querySelectorAll('.kotoba-tr').length")).toBe(0);
-    expect(await textOf(driver, "plain")).toBe("The meeting has been rescheduled to next Monday.");
+    expect(await textOf(driver, "plain")).toBe(PLAIN);
+    expect(await textOf(driver, "mixed")).toBe("Please read the manual before you start.");
+    expect(await driver.executeScript("return document.querySelector('#link')?.textContent ?? null")).toBe("the manual");
 
     // Turning it off is remembered for the site.
     await driver.navigate().refresh();
     await driver.sleep(5000);
-    expect(await driver.executeScript("return document.querySelectorAll('.kotoba-tr').length")).toBe(0);
+    expect(await textOf(driver, "plain")).toBe(PLAIN);
 
     await driver.switchTo().window(extensionHandle);
     const excluded = (await driver.executeAsyncScript(

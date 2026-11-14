@@ -10,25 +10,13 @@ declare global {
 const CONCURRENCY = 4;
 const RESCAN_DELAY_MS = 600;
 const OVERLAY_ID = "kotoba-overlay";
-const STYLE_ID = "kotoba-style";
-const TRANSLATION_CLASS = "kotoba-tr";
-const TRANSLATION_SELECTOR = `.${TRANSLATION_CLASS}`;
 const EXCLUDED =
   "script,style,noscript,textarea,input,select,option,code,pre,kbd,samp,var,svg,math,canvas,template," +
-  `[translate="no"],.notranslate,[contenteditable=""],[contenteditable="true"],${TRANSLATION_SELECTOR},#${OVERLAY_ID}`;
-/** Blocks of prose. The translation of each leaf block is added below it. */
+  `[translate="no"],.notranslate,[contenteditable=""],[contenteditable="true"],#${OVERLAY_ID}`;
+/** Blocks of prose. The text of each leaf block is replaced with its translation. */
 const UNIT_SELECTOR =
   "p,li,td,th,dt,dd,h1,h2,h3,h4,h5,h6,blockquote,figcaption,summary,caption,legend,label," +
   "div,section,article,main,header,footer,aside,nav,form,fieldset";
-
-const PAGE_STYLE = `
-  .${TRANSLATION_CLASS} {
-    display: block;
-    margin-top: 0.3em;
-    opacity: 0.78;
-    text-decoration: none;
-  }
-`;
 
 function requestTranslation(text: string): Promise<TranslateResult> {
   const message: BackgroundMessage = { type: "translate", text };
@@ -123,14 +111,6 @@ function showError(message: string): void {
 
 // --- Page text -------------------------------------------------------------
 
-function installStyle(): void {
-  if (document.getElementById(STYLE_ID)) return;
-  const style = document.createElement("style");
-  style.id = STYLE_ID;
-  style.textContent = PAGE_STYLE;
-  document.documentElement.append(style);
-}
-
 /** The text of an element without the parts the page reads as code or leaves untranslated. */
 function inlineText(element: Element): string {
   let text = "";
@@ -169,24 +149,24 @@ function collectUnits(): HTMLElement[] {
   return [...candidates].filter((element) => !nested.has(element));
 }
 
-function isOwnInsertion(record: MutationRecord): boolean {
-  const nodes = [...record.addedNodes, ...record.removedNodes];
-  return nodes.length > 0 && nodes.every((node) => node instanceof Element && node.classList.contains(TRANSLATION_CLASS));
-}
-
 interface Unit {
   element: HTMLElement;
   text: string;
 }
 
 /**
- * Adds the translation of each block below it, leaving the original in place.
- * Only what the reader is about to see is sent to the server.
+ * Replaces the text of each block with its translation and keeps the original nodes,
+ * so that the page can be put back as it was. Only what the reader is about to see
+ * is sent to the server.
  */
 class PageSession {
   private readonly settings: Settings;
   private readonly queue: Unit[] = [];
   private readonly scheduled = new WeakSet<HTMLElement>();
+  /** The children each translated block had before its text was replaced. */
+  private readonly originals = new Map<HTMLElement, Node[]>();
+  /** Blocks this session rewrote, whose mutations are its own doing. */
+  private readonly replaced = new WeakSet<Element>();
   private readonly observer: IntersectionObserver;
   private readonly mutations: MutationObserver;
   private running = 0;
@@ -195,11 +175,10 @@ class PageSession {
 
   constructor(settings: Settings) {
     this.settings = settings;
-    installStyle();
     this.observer = new IntersectionObserver((entries) => this.onIntersect(entries), { rootMargin: "400px" });
     // Infinite feeds and other pages built by scripts keep adding prose.
     this.mutations = new MutationObserver((records) => {
-      if (records.every((record) => isOwnInsertion(record))) return;
+      if (records.every((record) => this.replaced.has(record.target as Element))) return;
       this.scheduleScan();
     });
     if (document.body) this.mutations.observe(document.body, { childList: true, subtree: true });
@@ -212,7 +191,8 @@ class PageSession {
 
   restore(): void {
     this.halt();
-    for (const span of document.querySelectorAll(TRANSLATION_SELECTOR)) span.remove();
+    for (const [element, nodes] of this.originals) element.replaceChildren(...nodes);
+    this.originals.clear();
   }
 
   private halt(): void {
@@ -282,11 +262,9 @@ class PageSession {
     }
     const translated = result.text.trim();
     if (!translated || translated === unit.text) return;
-    const span = document.createElement("span");
-    span.className = TRANSLATION_CLASS;
-    if (this.settings.target !== "auto") span.lang = this.settings.target;
-    span.textContent = translated;
-    unit.element.append(span);
+    this.originals.set(unit.element, [...unit.element.childNodes]);
+    this.replaced.add(unit.element);
+    unit.element.replaceChildren(translated);
   }
 }
 
