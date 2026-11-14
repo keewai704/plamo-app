@@ -13,13 +13,12 @@ const OVERLAY_ID = "kotoba-overlay";
 const EXCLUDED =
   "script,style,noscript,textarea,input,select,option,code,pre,kbd,samp,var,svg,math,canvas,template," +
   "[hidden],[aria-hidden='true'],.sr-only,.visually-hidden,.visuallyhidden,.screen-reader-text," +
+  "nav,footer,[role='navigation'],[role='contentinfo']," +
   `[translate="no"],.notranslate,[contenteditable=""],[contenteditable="true"],#${OVERLAY_ID}`;
 /** Blocks of prose. The text of each leaf block is replaced with its translation. */
 const UNIT_SELECTOR =
   "p,li,td,th,dt,dd,h1,h2,h3,h4,h5,h6,blockquote,figcaption,summary,caption,legend,label," +
   "div,section,article,main,header,footer,aside,nav,form,fieldset";
-/** Chrome shared by every page: menus and the footer. */
-const SKIPPED = "nav,footer,[role='navigation'],[role='contentinfo']";
 
 function requestTranslation(text: string): Promise<TranslateResult> {
   const message: BackgroundMessage = { type: "translate", text };
@@ -164,7 +163,7 @@ function collectUnits(): HTMLElement[] {
   if (!body) return [];
   const candidates = new Set<HTMLElement>();
   for (const element of body.querySelectorAll<HTMLElement>(UNIT_SELECTOR)) {
-    if (element.closest(EXCLUDED) || element.closest(SKIPPED) || element.isContentEditable) continue;
+    if (element.closest(EXCLUDED) || element.isContentEditable) continue;
     if (!/\p{L}/u.test(unitText(element))) continue;
     candidates.add(element);
   }
@@ -178,7 +177,13 @@ function collectUnits(): HTMLElement[] {
 
   const units = new Set<HTMLElement>();
   for (const element of candidates) {
-    if (nested.has(element)) continue;
+    if (nested.has(element)) {
+      // A container can still carry a label of its own, such as a job name above its log.
+      for (const link of element.querySelectorAll<HTMLElement>(":scope > a, :scope > button, :scope > summary")) {
+        if (/\p{L}/u.test(unitText(link)) && !link.querySelector(UNIT_SELECTOR)) units.add(link);
+      }
+      continue;
+    }
     const text = unitText(element);
     if (looksLikeCode(text)) continue;
 

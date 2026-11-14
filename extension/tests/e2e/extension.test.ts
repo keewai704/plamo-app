@@ -17,6 +17,7 @@ const FIXTURE = `<!doctype html><html lang="en"><body>
   <p id="mixed">Please read <a id="link" href="#">the manual</a> before you start.</p>
   <p id="with-icon">Please read the <img id="icon" alt="manual icon" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="> manual before you start.</p>
   <div id="labels"><a id="label-a" href="#one">Detect changes</a> <a id="label-b" href="#two">Show more</a></div>
+  <nav id="chrome"><a href="#four">Code</a> <a href="#five">Pull requests</a></nav>
   <p id="file-name"><a id="file-link" href="#three">assets</a></p>
   <pre id="pre">const untouched = "code stays";</pre>
   <p id="opt-out" translate="no">Brand name stays</p>
@@ -170,6 +171,8 @@ describe.each([
     // A file name in a link is left alone.
     expect(await textOf(driver, "file-link")).toBe("assets");
     expect(await driver.executeScript("return document.querySelector('#file-link')?.getAttribute('href')")).toBe("#three");
+    // Navigation stays in the page's own language.
+    expect(await textOf(driver, "chrome")).toBe("Code Pull requests");
 
     await driver.close();
     await driver.switchTo().window(extensionHandle);
