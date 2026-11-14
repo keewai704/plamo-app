@@ -12,6 +12,7 @@ const RESCAN_DELAY_MS = 600;
 const OVERLAY_ID = "kotoba-overlay";
 const EXCLUDED =
   "script,style,noscript,textarea,input,select,option,code,pre,kbd,samp,var,svg,math,canvas,template," +
+  "[hidden],[aria-hidden='true'],.sr-only,.visually-hidden,.visuallyhidden,.screen-reader-text," +
   `[translate="no"],.notranslate,[contenteditable=""],[contenteditable="true"],#${OVERLAY_ID}`;
 /** Blocks of prose. The text of each leaf block is replaced with its translation. */
 const UNIT_SELECTOR =
@@ -171,16 +172,18 @@ interface Unit {
 }
 
 /**
- * Replaces the text of each block with its translation and keeps the original nodes,
- * so that the page can be put back as it was. Only what the reader is about to see
- * is sent to the server.
+ * Replaces the text of each block with its translation, keeping icons and images,
+ * and remembers the original nodes so that the page can be put back as it was.
+ * Only what the reader is about to see is sent to the server.
  */
 class PageSession {
   private readonly settings: Settings;
   private readonly queue: Unit[] = [];
   private readonly scheduled = new WeakSet<HTMLElement>();
-  /** The children each translated block had before its text was replaced. */
-  private readonly originals = new Map<HTMLElement, Node[]>();
+  /** Text nodes taken out of a block, with where they belong. */
+  private readonly removed: { parent: Node; next: Node | null; node: Text }[] = [];
+  /** The translation put at the start of each block. */
+  private readonly inserted = new Map<HTMLElement, Text>();
   /** Blocks this session rewrote, whose mutations are its own doing. */
   private readonly replaced = new WeakSet<Element>();
   private readonly observer: IntersectionObserver;
@@ -207,8 +210,30 @@ class PageSession {
 
   restore(): void {
     this.halt();
-    for (const [element, nodes] of this.originals) element.replaceChildren(...nodes);
-    this.originals.clear();
+    for (const node of this.inserted.values()) node.remove();
+    this.inserted.clear();
+    for (const { parent, next, node } of this.removed.reverse()) {
+      if (next && next.parentNode === parent) parent.insertBefore(node, next);
+      else parent.appendChild(node);
+    }
+    this.removed.length = 0;
+  }
+
+  /**
+   * Takes the words out of a block, keeping its icons, images and symbols. Alt text
+   * and aria labels stay on their elements, so the icons keep looking like icons.
+   */
+  private removeText(element: Element): void {
+    for (const node of [...element.childNodes]) {
+      if (node.nodeType === Node.TEXT_NODE) {
+        const text = node as Text;
+        if (!/\p{L}/u.test(text.data)) continue;
+        this.removed.push({ parent: element, next: text.nextSibling, node: text });
+        text.remove();
+      } else if (node.nodeType === Node.ELEMENT_NODE && !(node as Element).matches(EXCLUDED)) {
+        this.removeText(node as Element);
+      }
+    }
   }
 
   private halt(): void {
@@ -278,9 +303,11 @@ class PageSession {
     }
     const translated = result.text.trim();
     if (!translated || translated === unit.text) return;
-    this.originals.set(unit.element, [...unit.element.childNodes]);
     this.replaced.add(unit.element);
-    unit.element.replaceChildren(translated);
+    this.removeText(unit.element);
+    const node = document.createTextNode(translated);
+    this.inserted.set(unit.element, node);
+    unit.element.prepend(node);
   }
 }
 

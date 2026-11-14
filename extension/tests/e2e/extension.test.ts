@@ -15,6 +15,7 @@ const PLAIN = "The meeting has been rescheduled to next Monday.";
 const FIXTURE = `<!doctype html><html lang="en"><body>
   <p id="plain">${PLAIN}</p>
   <p id="mixed">Please read <a id="link" href="#">the manual</a> before you start.</p>
+  <p id="with-icon">Please read the <img id="icon" alt="manual icon" src="data:image/gif;base64,R0lGODlhAQABAAAAACw="> manual before you start.</p>
   <pre id="pre">const untouched = "code stays";</pre>
   <p id="opt-out" translate="no">Brand name stays</p>
   <div id="late"></div>
@@ -153,6 +154,12 @@ describe.each([
     // Code and opted-out blocks keep their text.
     expect(await textOf(driver, "pre")).toBe('const untouched = "code stays";');
     expect(await textOf(driver, "opt-out")).toBe("Brand name stays");
+
+    // Icons keep their alt text and stay in the page.
+    expect(await driver.executeScript("return document.querySelector('#icon')?.getAttribute('alt') ?? null")).toBe(
+      "manual icon",
+    );
+    expect(await textOf(driver, "with-icon")).not.toContain("manual icon");
 
     await driver.close();
     await driver.switchTo().window(extensionHandle);
