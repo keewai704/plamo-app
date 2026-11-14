@@ -52,8 +52,7 @@ body.options form {
   padding: 16px;
 }
 
-textarea,
-input:not([type="radio"]),
+input:not([type="radio"]):not([type="checkbox"]),
 select {
   width: 100%;
   min-width: 0;
@@ -65,10 +64,6 @@ select {
   font: inherit;
 }
 
-textarea {
-  resize: vertical;
-}
-
 button {
   padding: 8px 16px;
   border: 0;
@@ -78,6 +73,11 @@ button {
   font: inherit;
   white-space: nowrap;
   cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
 
 button.primary {
@@ -96,11 +96,22 @@ button.icon {
   background: transparent;
 }
 
-button.icon.primary {
-  background: var(--accent);
+button.page {
+  display: grid;
+  justify-items: center;
+  gap: 2px;
+  padding: 14px 16px;
+  border-radius: 14px;
+  font-weight: 600;
 }
 
-button.icon[aria-pressed="true"] {
+button.page small {
+  font-size: 12px;
+  font-weight: 400;
+  opacity: 0.65;
+}
+
+button.page[aria-pressed="true"] {
   color: var(--on-accent);
   background: var(--accent);
 }
@@ -115,11 +126,6 @@ svg {
   stroke-linejoin: round;
 }
 
-svg .solid {
-  fill: currentColor;
-  stroke: none;
-}
-
 .row {
   display: flex;
   align-items: center;
@@ -128,10 +134,6 @@ svg .solid {
 
 .row.actions {
   justify-content: flex-end;
-}
-
-.row.actions #page {
-  margin-right: auto;
 }
 
 .status {
@@ -195,57 +197,30 @@ svg .solid {
   outline-offset: 1px;
 }
 
-.result {
-  position: relative;
+.check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
 }
 
-#output {
-  display: block;
-  white-space: pre-wrap;
-  user-select: text;
+.note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  text-align: center;
 }
 
-#output:empty:not([data-state="loading"]),
-#error:empty {
-  display: none;
-}
-
-#output[data-state="done"] {
-  min-height: 36px;
-  padding-right: 40px;
-}
-
-#output[data-state="loading"]:empty::before {
-  content: "";
-  display: block;
-  width: 18px;
-  height: 18px;
-  border: 2px solid var(--muted);
-  border-top-color: transparent;
-  border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-#copy {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-}
-
-#output[data-state="error"],
 #error {
   color: var(--error);
 }
 
+#error:empty {
+  display: none;
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .status[data-state="loading"],
-  #output[data-state="loading"]:empty::before {
+  .status[data-state="loading"] {
     animation-duration: 3s;
   }
 }

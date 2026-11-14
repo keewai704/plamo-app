@@ -14,7 +14,6 @@ const NAMES: Record<ServerStatus, string> = {
 /** Keeps a status dot in step with the server for as long as the page is open. */
 export class StatusView {
   private status: ServerStatus = "unreachable";
-  private translating = false;
 
   constructor(private readonly element: HTMLElement) {
     void this.refresh();
@@ -23,20 +22,9 @@ export class StatusView {
 
   async refresh(): Promise<ServerStatus> {
     this.status = await fetchStatus(await loadSettings());
-    this.render();
+    this.element.dataset.state = this.status;
+    this.element.title = NAMES[this.status];
+    this.element.setAttribute("aria-label", NAMES[this.status]);
     return this.status;
-  }
-
-  /** A request to a sleeping server loads the weights first. */
-  setTranslating(translating: boolean): void {
-    this.translating = translating;
-    this.render();
-  }
-
-  private render(): void {
-    const shown = this.translating && this.status === "sleeping" ? "loading" : this.status;
-    this.element.dataset.state = shown;
-    this.element.title = NAMES[shown];
-    this.element.setAttribute("aria-label", NAMES[shown]);
   }
 }

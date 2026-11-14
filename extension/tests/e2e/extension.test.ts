@@ -9,12 +9,19 @@ import { startChrome, startFirefox, type ExtensionSession } from "./browsers";
 
 const serverUrl = process.env.PLAMO_URL ?? "http://127.0.0.1:8000";
 const apiKey = process.env.PLAMO_API_KEY ?? "";
+const JAPANESE = /[ぁ-んァ-ヶ一-龠]/;
 
 const FIXTURE = `<!doctype html><html lang="en"><body>
   <p id="plain">The meeting has been rescheduled to next Monday.</p>
   <p id="mixed">Please read <a id="link" href="#">the manual</a> before you start.</p>
   <pre id="pre">const untouched = "code stays";</pre>
   <p id="opt-out" translate="no">Brand name stays</p>
+  <div id="late"></div>
+  <script>
+    setTimeout(() => {
+      document.querySelector("#late").innerHTML = '<p id="late-text">This paragraph appeared later.</p>';
+    }, 500);
+  </script>
 </body></html>`;
 
 let fixtureServer: Server;
@@ -40,6 +47,26 @@ async function textOf(driver: WebDriver, id: string): Promise<string> {
 async function waitForText(driver: WebDriver, id: string, pattern: RegExp): Promise<string> {
   await driver.wait(async () => pattern.test(await textOf(driver, id)), 120_000, `#${id} never matched ${pattern}`);
   return textOf(driver, id);
+}
+
+/** The translation added below the block, or null when there is none. */
+function translationOf(driver: WebDriver, selector: string): Promise<string | null> {
+  return driver.executeScript<string | null>(
+    `return document.querySelector(${JSON.stringify(`${selector} .kotoba-tr`)})?.textContent ?? null;`,
+  );
+}
+
+async function waitForTranslation(driver: WebDriver, selector: string, pattern: RegExp): Promise<string> {
+  let seen: string | null = null;
+  await driver.wait(
+    async () => {
+      seen = await translationOf(driver, selector);
+      return seen !== null && pattern.test(seen);
+    },
+    120_000,
+    `${selector} was never translated`,
+  );
+  return seen!;
 }
 
 async function saveOptions(session: ExtensionSession, url: string, key: string): Promise<void> {
@@ -121,24 +148,53 @@ describe.each([
     await waitForStatus(driver, "sleeping");
   });
 
-  it("translates text from the popup into the chosen language", async () => {
-    await driver.get(`${session.baseUrl}/popup.html`);
-    const target = await driver.wait(until.elementLocated(By.id("target")), 10_000);
-    await driver.wait(async () => (await target.getAttribute("value")) === "ja", 10_000);
+  it("translates a page as it opens, below the original", async () => {
+    const { extensionHandle, pageHandle } = await openFixture(session);
+    await driver.switchTo().window(pageHandle);
 
-    await waitForStatus(driver, "sleeping");
-    await target.findElement(By.css('option[value="en"]')).click();
-    await driver.findElement(By.id("source")).sendKeys("会議は来週の月曜日に変更されました。");
-    await driver.findElement(By.id("translate")).click();
+    await expect(waitForTranslation(driver, "#plain", JAPANESE)).resolves.toMatch(/月曜/);
+    await waitForTranslation(driver, "#mixed", JAPANESE);
+    // Prose the page adds later is translated too.
+    await waitForTranslation(driver, "#late-text", JAPANESE);
 
-    await expect(waitForText(driver, "output", /monday/i)).resolves.toMatch(/monday/i);
-    await waitForStatus(driver, "ready");
+    // The original stays where it was, and links keep their own text.
+    expect(await driver.executeScript<string>("return document.querySelector('#plain').firstChild.textContent")).toContain(
+      "The meeting has been rescheduled",
+    );
+    expect(await driver.executeScript<string>("return document.querySelector('#link').textContent")).toBe("the manual");
+    // Code and opted-out blocks are left alone.
+    expect(await translationOf(driver, "#pre")).toBeNull();
+    expect(await translationOf(driver, "#opt-out")).toBeNull();
 
-    // The chosen language is remembered; later tests translate into Japanese again.
-    await driver.navigate().refresh();
-    const reloaded = await driver.wait(until.elementLocated(By.id("target")), 10_000);
-    await driver.wait(async () => (await reloaded.getAttribute("value")) === "en", 10_000);
-    await reloaded.findElement(By.css('option[value="ja"]')).click();
+    await driver.close();
+    await driver.switchTo().window(extensionHandle);
+  });
+
+  it("re-translates the page when the target language changes", async () => {
+    const { extensionHandle, pageHandle, tabId } = await openFixture(session);
+    await driver.switchTo().window(pageHandle);
+    const japanese = await waitForTranslation(driver, "#plain", JAPANESE);
+
+    await driver.switchTo().window(extensionHandle);
+    await driver.executeScript("return chrome.storage.local.set({ target: 'fr' })");
+    await expect(sendToBackground(driver, { type: "retranslate", tabId })).resolves.toEqual({ active: true });
+
+    await driver.switchTo().window(pageHandle);
+    await driver.wait(
+      async () => {
+        const translation = await translationOf(driver, "#plain");
+        return translation !== null && translation !== japanese;
+      },
+      120_000,
+      "the page kept the old translation",
+    );
+
+    await driver.switchTo().window(extensionHandle);
+    await driver.executeScript("return chrome.storage.local.set({ target: 'ja' })");
+
+    await driver.switchTo().window(pageHandle);
+    await driver.close();
+    await driver.switchTo().window(extensionHandle);
   });
 
   it("shows the translation of a selection in an overlay", async () => {
@@ -160,25 +216,47 @@ describe.each([
     await driver.switchTo().window(extensionHandle);
   });
 
-  it("translates the page in place and restores it", async () => {
+  it("restores the original and leaves the site untranslated next time", async () => {
     const { extensionHandle, pageHandle, tabId } = await openFixture(session);
+    await driver.switchTo().window(pageHandle);
+    await waitForTranslation(driver, "#plain", /月曜/);
+    await driver.switchTo().window(extensionHandle);
 
-    await expect(sendToBackground(driver, { type: "toggle-page", tabId })).resolves.toEqual({ active: true });
+    await expect(sendToBackground(driver, { type: "set-page", tabId, active: false })).resolves.toEqual({ active: false });
 
     await driver.switchTo().window(pageHandle);
-    await expect(waitForText(driver, "plain", /月曜/)).resolves.toMatch(/月曜/);
-    await waitForText(driver, "link", /[ぁ-んァ-ヶ一-龠]/);
-    expect(await textOf(driver, "pre")).toContain("code stays");
-    expect(await textOf(driver, "opt-out")).toBe("Brand name stays");
+    expect(await driver.executeScript("return document.querySelectorAll('.kotoba-tr').length")).toBe(0);
+    expect(await textOf(driver, "plain")).toBe("The meeting has been rescheduled to next Monday.");
+
+    // Turning it off is remembered for the site.
+    await driver.navigate().refresh();
+    await driver.sleep(5000);
+    expect(await driver.executeScript("return document.querySelectorAll('.kotoba-tr').length")).toBe(0);
 
     await driver.switchTo().window(extensionHandle);
-    await expect(sendToBackground(driver, { type: "toggle-page", tabId })).resolves.toEqual({ active: false });
+    const excluded = (await driver.executeAsyncScript(
+      "const done = arguments[0]; chrome.storage.local.get('excludedOrigins').then(({ excludedOrigins = [] }) => done(excludedOrigins));",
+    )) as string[];
+    expect(excluded).toEqual([new URL(fixtureUrl).origin]);
+
+    // Turning it back on forgets the exception.
+    await expect(sendToBackground(driver, { type: "set-page", tabId, active: true })).resolves.toEqual({ active: true });
 
     await driver.switchTo().window(pageHandle);
-    expect(await textOf(driver, "plain")).toBe("The meeting has been rescheduled to next Monday.");
-    expect(await textOf(driver, "link")).toBe("the manual");
-
     await driver.close();
     await driver.switchTo().window(extensionHandle);
+  });
+
+  it("remembers the chosen target language", async () => {
+    await driver.get(`${session.baseUrl}/popup.html`);
+    const target = await driver.wait(until.elementLocated(By.id("target")), 10_000);
+    await driver.wait(async () => (await target.getAttribute("value")) === "ja", 10_000);
+
+    await target.findElement(By.css('option[value="en"]')).click();
+    await driver.navigate().refresh();
+
+    const reloaded = await driver.wait(until.elementLocated(By.id("target")), 10_000);
+    await driver.wait(async () => (await reloaded.getAttribute("value")) === "en", 10_000);
+    await reloaded.findElement(By.css('option[value="ja"]')).click();
   });
 });

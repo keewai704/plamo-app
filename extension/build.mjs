@@ -12,10 +12,22 @@ const manifest = {
   icons: { 16: "icons/icon-16.png", 32: "icons/icon-32.png", 48: "icons/icon-48.png", 128: "icons/icon-128.png" },
   action: { default_popup: "popup.html", default_icon: { 16: "icons/icon-16.png", 32: "icons/icon-32.png" } },
   options_ui: { page: "options.html", open_in_tab: false },
-  permissions: ["storage", "contextMenus", "activeTab", "scripting"],
-  // The default server; any other origin is requested when it is saved.
-  host_permissions: ["http://127.0.0.1/*", "http://localhost/*"],
-  optional_host_permissions: ["http://*/*", "https://*/*"],
+  permissions: ["storage", "contextMenus", "scripting"],
+  // Pages are translated where they open, so the extension reads them on every site.
+  host_permissions: ["http://*/*", "https://*/*"],
+  content_scripts: [
+    {
+      matches: ["http://*/*", "https://*/*"],
+      js: ["content.js"],
+      run_at: "document_idle",
+    },
+  ],
+  commands: {
+    "toggle-page": {
+      suggested_key: { default: "Alt+Shift+T" },
+      description: "ページを翻訳 / 原文に戻す",
+    },
+  },
 };
 
 const targets = {

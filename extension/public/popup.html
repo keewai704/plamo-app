@@ -16,28 +16,11 @@
         </svg>
       </button>
     </header>
-    <textarea id="source" aria-label="原文" rows="5"></textarea>
-    <div class="row actions">
-      <button id="page" class="icon" aria-label="ページを翻訳" title="ページを翻訳" aria-pressed="false">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z" />
-          <path d="M14 2v6h6M8 13h8M8 17h5" />
-        </svg>
-      </button>
-      <button id="stop" class="primary icon" aria-label="停止" title="停止" hidden>
-        <svg viewBox="0 0 24 24" aria-hidden="true"><rect class="solid" x="6" y="6" width="12" height="12" rx="2" /></svg>
-      </button>
-      <button id="translate" class="primary">翻訳</button>
-    </div>
-    <div class="result">
-      <output id="output" aria-live="polite"></output>
-      <button id="copy" class="icon" aria-label="コピー" title="コピー" hidden>
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <rect x="9" y="9" width="12" height="12" rx="2" />
-          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-        </svg>
-      </button>
-    </div>
+    <button id="page" class="page" aria-pressed="false">
+      <span id="page-label">このページを翻訳</span>
+      <small>Alt+Shift+T</small>
+    </button>
+    <p id="note" class="note" hidden></p>
     <script src="popup.js"></script>
   </body>
 </html>
