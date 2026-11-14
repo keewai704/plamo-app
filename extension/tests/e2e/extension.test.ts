@@ -116,6 +116,7 @@ describe.each([
 
   afterAll(async () => {
     await driver?.quit();
+    await session?.cleanup?.();
   });
 
   it("rejects a wrong API key", async () => {

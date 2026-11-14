@@ -1,4 +1,6 @@
-import { resolve } from "node:path";
+import { cp, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import { Builder, type WebDriver } from "selenium-webdriver";
 import chrome from "selenium-webdriver/chrome.js";
 import firefox from "selenium-webdriver/firefox.js";
@@ -7,20 +9,49 @@ export interface ExtensionSession {
   driver: WebDriver;
   /** Base URL of the extension's own pages, without a trailing slash. */
   baseUrl: string;
+  /** Removes the build the session was started from, when it made one. */
+  cleanup?: () => Promise<void>;
 }
 
 const FIREFOX_UUID = "6f1e0a3c-3f4b-4a55-9a11-2f6f3c1d7e10";
 
 export async function startChrome(): Promise<ExtensionSession> {
+  const extensionDir = await chromeTestBuild();
   const options = new chrome.Options();
-  options.addArguments(`--load-extension=${resolve("dist/chrome")}`, "--headless=new", "--no-sandbox", "--disable-dev-shm-usage");
+  options.addArguments(`--load-extension=${extensionDir}`, "--headless=new", "--no-sandbox", "--disable-dev-shm-usage");
   if (process.env.CHROME_BIN) options.setChromeBinaryPath(process.env.CHROME_BIN);
 
   const service = new chrome.ServiceBuilder(process.env.CHROMEDRIVER);
   const driver = await new Builder().forBrowser("chrome").setChromeOptions(options).setChromeService(service).build();
 
   const extensionId = await findChromeExtensionId(driver);
-  return { driver, baseUrl: `chrome-extension://${extensionId}` };
+  return {
+    driver,
+    baseUrl: `chrome-extension://${extensionId}`,
+    cleanup: () => rm(extensionDir, { recursive: true, force: true }),
+  };
+}
+
+/**
+ * Headless Chrome cannot answer the prompt for optional host permissions, so the
+ * test build is granted the sites the shipped build asks for when a server is saved.
+ */
+async function chromeTestBuild(): Promise<string> {
+  const source = resolve("dist/chrome");
+  const shipped = JSON.parse(await readFile(join(source, "manifest.json"), "utf8")) as {
+    optional_host_permissions?: string[];
+  };
+  if (!shipped.optional_host_permissions?.includes("https://*/*")) {
+    throw new Error("dist/chrome must offer all-site access as an optional permission");
+  }
+
+  const target = await mkdtemp(join(tmpdir(), "kotoba-chrome-"));
+  await cp(source, target, { recursive: true });
+  const manifestPath = join(target, "manifest.json");
+  const manifest = JSON.parse(await readFile(manifestPath, "utf8"));
+  manifest.host_permissions = ["http://*/*", "https://*/*"];
+  await writeFile(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
+  return target;
 }
 
 async function findChromeExtensionId(driver: WebDriver): Promise<string> {
